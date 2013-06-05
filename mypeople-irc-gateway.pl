@@ -57,13 +57,16 @@ sub gethelptext{
 }
 sub broadcast{
 	my $content = shift;
-	foreach my $userid (keys %mp_users){
-		my $user = $mp_users{$userid};
+	my ($except_buddyId,$except_groupId) = @_;
+	foreach my $buddyId (keys %mp_users){
+		next if $except_buddyId && $except_buddyId eq $buddyId;
+		my $user = $mp_users{$buddyId};
 		if( $user->{on} ){
-			$bot->send($userid,$content);
+			$bot->send($buddyId,$content);
 		}
 	}
 	foreach my $groupId (keys %mp_groups){
+		next if $except_groupId && $except_groupId eq $groupId;
 		my $group = $mp_groups{$groupId};
 		if( $group->{on} ){
 			$bot->groupSend($groupId, $content);
@@ -139,11 +142,6 @@ sub callback{
 		# [
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"N","name":"XXXX","photoId":"myp_pub:XXXXXX"},
 		# ]
-
-		my $buddy = from_json($content)->[0]; # 
-		my $buddy_name = $buddy->{buddys}->{name};
-		my $res = $bot->send($buddyId, "Nice to meet you, $buddy_name");
-
 	}
 	elsif( $action eq 'sendFromMessage' ){ # when someone send a message to this bot.
 		# $buddyId : buddyId who sends message
@@ -154,7 +152,9 @@ sub callback{
 
 		if( !$was_cmd && $user->{on} ){
 			my $username = $user->{name};
-			$irc->send_srv('PRIVMSG', $ch, "$username : $content");
+			my $msg = "$username : $content";
+			$irc->send_srv('PRIVMSG', $ch, $msg);
+			broadcast($msg, $buddyId);
 		}
 	}
 	elsif( $action eq 'createGroup' ){ # when this bot invited to a group chat channel.
@@ -196,9 +196,10 @@ sub callback{
 
 		if( !$was_cmd && $group->{on} ){
 			my $username = $user->{name};
-			$irc->send_srv('PRIVMSG', $ch, "$username : $content");
+			my $msg = "$username : $content";
+			$irc->send_srv('PRIVMSG', $ch, $msg);
+			broadcast($msg, $buddyId, $groupId);
 		}
-
 	}
 }
 
