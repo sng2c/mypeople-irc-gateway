@@ -9,15 +9,20 @@ use AnyEvent::HTTPD;
 use Net::MyPeople::Bot;
 use Data::Printer;
 use JSON;
+use YAML;
 use Log::Log4perl qw(:easy);
 Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
 
-my $cv = AE::cv;
 my $host = 'irc.freenode.net';
 my $port = 8000;
 my $nick = 'irc_myp';
 my $ch = '#perl-kr';
 my $APIKEY = $ENV{MYPEOPLE_APIKEY}; 
+my $datapath = 'data.yaml';
+
+my $cv = AE::cv;
+my $sig = AE::signal INT => sub{$cv->send;};
+
 
 sub parse_msg {
     my ($irc_msg) = @_;
@@ -51,6 +56,17 @@ $httpd->reg_cb (
 my %mp_users;
 my %mp_groups;
 my %mp_group_users;
+if( -e $datapath ){
+	local($/); undef($/);
+	open(my $fh,"<:utf8",$datapath);
+	my $data = <$fh>;
+	close($fh);
+	my ($mpu, $mpg, $mpgu) = YAML::Load($data);
+	%mp_users = %{$mpu};
+	%mp_groups= %{$mpg};
+	%mp_group_users = %{$mpgu};
+}
+
 
 sub gethelptext{
 	return "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장";
@@ -215,6 +231,10 @@ $irc->reg_cb (connect => sub {
 });
 $irc->reg_cb (registered => sub { DEBUG "I'm in!"; });
 $irc->reg_cb (disconnect => sub { DEBUG "I'm out!"; $cv->send });
+$irc->reg_cb (join => sub { 
+		my ($cl, $nick, $channel, $is_myself) = @_;
+		DEBUG "started" if $is_myself;
+});
 $irc->reg_cb (publicmsg => sub { 
 	my ($self, $ch, $ircmsg) = @_;
 	my ($msgnick, $msg) = parse_msg($ircmsg);
@@ -227,4 +247,12 @@ $irc->reg_cb (publicmsg => sub {
 
 $irc->connect( $host, $port, {nick=>$nick});
 
-$cv->recv;
+$cv->recv; # EVENT LOOP
+
+$irc->disconnect;
+open my $fh,">:utf8",$datapath;
+binmode($fh);
+print $fh YAML::Dump(\%mp_users,\%mp_groups,\%mp_group_users);
+close($fh);
+say "stopped";
+
