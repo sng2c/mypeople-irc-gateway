@@ -57,11 +57,7 @@ my %mp_users;
 my %mp_groups;
 my %mp_group_users;
 if( -e $datapath ){
-	local($/); undef($/);
-	open(my $fh,"<:utf8",$datapath);
-	my $data = <$fh>;
-	close($fh);
-	my ($mpu, $mpg, $mpgu) = YAML::Load($data);
+	my ($mpu, $mpg, $mpgu) = YAML::LoadFile($datapath);
 	%mp_users = %{$mpu};
 	%mp_groups= %{$mpg};
 	%mp_group_users = %{$mpgu};
@@ -250,9 +246,6 @@ $irc->connect( $host, $port, {nick=>$nick});
 $cv->recv; # EVENT LOOP
 
 $irc->disconnect;
-open my $fh,">:utf8",$datapath;
-binmode($fh);
-print $fh YAML::Dump(\%mp_users,\%mp_groups,\%mp_group_users);
-close($fh);
+YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_group_users);
 say "stopped";
 
