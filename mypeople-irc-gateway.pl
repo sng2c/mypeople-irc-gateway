@@ -17,7 +17,7 @@ Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
 ### CONFIGURATIONS FOR YOU ###
 my $IRC_HOST = 'irc.freenode.net';
 my $IRC_PORT = 8000;
-my $IRC_NICK = 'MYPEOPLE_BOT';
+my $IRC_NICK = 'MYPEOPLE_BOT2';
 my $IRC_CHANNEL = '#perl-kr';
 my $MYPEOPLE_APIKEY = '';
 my $HTTP_PORT = 8080; # for MyPeople-Bot
@@ -163,7 +163,7 @@ sub get_group{
 	return $group,$usernick;
 }
 
-sub gethelptext{
+sub process_command{
 	my ($buddyId,$groupId,$user_group,$content) = @_;
 
     my $content_lc = lc($content);
@@ -190,7 +190,7 @@ sub gethelptext{
 	if( $content_lc eq 'who' ){
 		my %members = broadmembers();
 		my @msg;
-        my $out = "[Mypeople]";
+        my $out = "[MyPeople]\n";
 		foreach my $k (keys %members){
 			my @mem = @{$members{$k}};
 			$out .= "$k : ".join(',',@mem)."\n" ;
@@ -387,6 +387,7 @@ $irc->reg_cb(
 	irc_353	=> sub {
 		my ($cl, $ircmsg) = @_;
 		my ($_nick,$sep,$_ch,$names) = @{$ircmsg->{params}};
+		$names =~ s/\s+/\n/gs;
 		my $msg = "[IRC $IRC_CHANNEL]\n$names";
 		while( my $from = shift(@names_queue) )
 		{
