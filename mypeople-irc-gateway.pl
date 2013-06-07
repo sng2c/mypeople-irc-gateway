@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+use utf8;
 use AnyEvent;
 use AnyEvent::IRC::Client;
 use AnyEvent::HTTPD;
@@ -9,6 +10,7 @@ use Net::MyPeople::Bot;
 use Data::Printer;
 use JSON;
 use YAML;
+use Encode;
 use Log::Log4perl qw(:easy);
 Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
 
@@ -17,7 +19,6 @@ my $IRC_HOST = 'irc.freenode.net';
 my $IRC_PORT = 8000;
 my $IRC_NICK = 'MYPEOPLE_BOT';
 my $IRC_CHANNEL = '#perl-kr';
-
 my $MYPEOPLE_APIKEY = '';
 my $HTTP_PORT = 8080; # for MyPeople-Bot
 ### CONFIGURATIONS END ###
@@ -133,7 +134,7 @@ sub broadmembers{
 sub get_user{
 	my $buddyId = shift;
 	my $user = $mp_users{$buddyId};
-	if(!$user || $user->{buddyId}){
+	if(!$user && !$user->{buddyId}){
 		my $res = $bot->buddy($buddyId);
 		$user = $res->{buddys}->[0];
 		$user->{on} = 1;
@@ -234,9 +235,16 @@ sub process_command{
 	}
 }
 
+sub irc_send{
+	my $msg = shift;
+	Encode::_utf8_off($msg) if Encode::is_utf8($msg);
+	$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
+}
+
 sub callback{
 	my ($action, $buddyId, $groupId, $content ) = @_;
 	DEBUG 'callback dump:'. p @_;
+	$content = Encode::decode('utf8',$content);
 
 	if   ( $action eq 'addBuddy' ){ # when someone add this bot as a buddy.
 		# $buddyId : buddyId who adds this bot to buddys.
@@ -259,7 +267,7 @@ sub callback{
 			my $mapped_nick = $mp_nickmap{$buddyId};
 			my $nick = $mapped_nick?$mapped_nick:$username;
 			my $msg = "[$nick] $content";
-			$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
+			irc_send($msg);
 			broadcast($msg, $buddyId);
 		}
 	}
@@ -305,7 +313,7 @@ sub callback{
 		if( !$was_cmd && $group->{on} ){
 			my $groupname = $group->{name};
 			my $msg = "[$usernick] $content";
-			$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
+			irc_send($msg);
 			broadcast($msg, $buddyId, $groupId);
 		}
 	}
@@ -339,8 +347,8 @@ $irc->reg_cb (publicmsg => sub {
 	return if $msgnick eq $IRC_NICK; # loop guard
 
 	if( $msg =~ /^$IRC_NICK.+help$/ ){
-		$irc->send_srv('PRIVMSG', $ch, "$IRC_NICK - A gateway between #perl-kr and mypeople-bot.");
-		$irc->send_srv('PRIVMSG', $ch, "    $IRC_NICK bot : prints member list in $IRC_NICK bot.");
+		irc_send("$IRC_NICK - A gateway between #perl-kr and mypeople-bot.");
+		irc_send("    $IRC_NICK bot : prints member list in $IRC_NICK bot.");
 		return;
 	}
 	if( $msg =~ /^$IRC_NICK.+bot$/ ){
@@ -348,11 +356,11 @@ $irc->reg_cb (publicmsg => sub {
 		my $printed = 0;
 		foreach my $k (keys %members){
 			my @mem = @{$members{$k}};
-			$irc->send_srv('PRIVMSG', $ch, "MyPeople $k : ".join(',',@mem));
+			irc_send("MyPeople $k : ".join(',',@mem));
 			$printed = 1;
 		}
 		unless($printed){
-			$irc->send_srv('PRIVMSG', $ch, "Nobody is listening by $IRC_NICK bot");
+			irc_send("Nobody is listening by $IRC_NICK bot");
 		}
 		return;
 	}
