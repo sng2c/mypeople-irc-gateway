@@ -8,10 +8,13 @@ use AnyEvent::IRC::Client;
 use AnyEvent::HTTPD;
 use Net::MyPeople::Bot;
 use Data::Printer;
+
 use JSON;
 use YAML;
 use Log::Log4perl qw(:easy);
 Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
+
+start:
 
 my $host = 'irc.freenode.net';
 my $port = 8000;
@@ -21,7 +24,7 @@ my $APIKEY = $ENV{MYPEOPLE_APIKEY};
 my $datapath = 'data.yaml';
 
 my $cv = AE::cv;
-my $sig = AE::signal INT => sub{$cv->send;};
+my $sig = AE::signal INT => sub{$cv->send(1);};
 
 
 sub parse_msg {
@@ -32,6 +35,7 @@ sub parse_msg {
     return ($nickname, $message);
 }
 
+my @names_queue;
 
 my $bot = Net::MyPeople::Bot->new({apikey=>$APIKEY});
 my $irc = AnyEvent::IRC::Client->new;
@@ -65,7 +69,7 @@ if( -e $datapath ){
 
 
 sub gethelptext{
-	return "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장";
+	return "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장\nbot : 전체 중계봇 사용자목록\nirc : irc사용자목록";
 }
 sub broadcast{
 	my $content = shift;
@@ -85,6 +89,28 @@ sub broadcast{
 		}
 	}
 }
+
+sub broadmembers{
+	my %mem;
+
+	foreach my $k (keys %mp_users){
+		my $user = $mp_users{$k};
+		if( $user->{on} ){
+			push(@{$mem{personal}},$user->{name});
+		}
+	}
+	my $num = 1;
+	foreach my $k (keys %mp_groups){
+		my $group = $mp_groups{$k};
+		if( $group->{on} ){
+			my @members = @{$bot->groupMembers($k)->{buddys}};
+			$mem{"group_$num"} = [map{$_->{name};}@members];
+		}		
+	}
+	p %mem;
+	return %mem;
+}
+
 sub get_user{
 	my $buddyId = shift;
 	my $user = $mp_users{$buddyId};
@@ -137,6 +163,33 @@ sub process_command{
 		}
 		return 1;
 	}
+	if( $content eq 'bot' ){
+		my %members = broadmembers();
+		my @msg;
+		foreach my $k (keys %members){
+			my @mem = @{$members{$k}};
+			push( @msg, "$k member : ".join(',',@mem) );
+		}
+
+		foreach my $msg (@msg){
+			if( $groupId ){
+				$bot->groupSend($groupId,$msg);
+			}
+			else{
+				$bot->send($buddyId,$msg);
+			}
+		}
+
+		return 1;
+	}
+
+	if( $content eq 'irc' ){
+		DEBUG 'irc command';
+		$irc->send_srv('NAMES'=>$ch);
+		push(@names_queue,[$buddyId,$groupId]);
+		return 1;
+	}
+
 	if( $groupId && $content eq 'exit' ){
 		$bot->groupExit($groupId);
 		return 1;
@@ -229,21 +282,77 @@ $irc->reg_cb (registered => sub { DEBUG "I'm in!"; });
 $irc->reg_cb (disconnect => sub { DEBUG "I'm out!"; $cv->send });
 $irc->reg_cb (join => sub { 
 		my ($cl, $nick, $channel, $is_myself) = @_;
-		DEBUG "started" if $is_myself;
+		if($is_myself){
+			DEBUG "started";
+			return;
+		}
+		else{
+			broadcast("$nick 님이 입장하셨습니다.");
+		}
+		
+});
+$irc->reg_cb (privatemsg => sub { 
+	my ($self, $nick, $ircmsg) = @_;
+	DEBUG p $nick;
+	DEBUG p $ircmsg;
 });
 $irc->reg_cb (publicmsg => sub { 
 	my ($self, $ch, $ircmsg) = @_;
 	my ($msgnick, $msg) = parse_msg($ircmsg);
 	return if $msgnick eq $nick; # loop guard
 
+	if( $msg =~ /^$nick.+help$/ ){
+		$irc->send_srv('PRIVMSG', $ch, "$nick - A gateway between #perl-kr and mypeople-bot.");
+		$irc->send_srv('PRIVMSG', $ch, "$nick bot : prints member list in $nick bot.");
+		return;
+	}
+	if( $msg =~ /^$nick.+bot$/ ){
+		my %members = broadmembers();
+		foreach my $k (keys %members){
+			my @mem = @{$members{$k}};
+			$irc->send_srv('PRIVMSG', $ch, "MyPeople $k : ".join(',',@mem));
+		}
+		return;
+	}
 	broadcast("$msgnick : $msg");
 } 
 );
-
+$irc->reg_cb(
+	part => sub {
+		my ($cl, $nick, $channel, $is_myself, $msg) = @_;
+		unless($is_myself){
+			broadcast("$nick 님이 채널을 떠났습니다.");
+		}
+	}
+);
+$irc->reg_cb(
+	quit => sub {
+		my ($cl, $nick, $msg) = @_;
+		broadcast("$nick 님이 접속을 종료하였습니다.");
+	}
+);
+$irc->reg_cb(
+	irc_353	=> sub {
+		my ($cl, $ircmsg) = @_;
+		my ($_nick,$sep,$_ch,$names) = @{$ircmsg->{params}};
+		my $msg = "IRC $ch : $names";
+		while( my $from = shift(@names_queue) )
+		{
+			if( $from->[1] ){
+				$bot->groupSend($from->[1],$msg);
+			}
+			else{
+				$bot->send($from->[0],$msg);
+			}
+		}
+	}
+);
 
 $irc->connect( $host, $port, {nick=>$nick});
 
-$cv->recv; # EVENT LOOP
+my $res = $cv->recv; # EVENT LOOP
+
+goto start unless $res;
 
 $irc->disconnect;
 YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_group_users);
