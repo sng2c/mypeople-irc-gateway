@@ -17,7 +17,7 @@ Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
 
 my $host = 'irc.freenode.net';
 my $port = 8000;
-my $nick = 'irc_myp';
+my $nick = 'MYPEOPLE_BOT';
 my $ch = '#perl-kr';
 my $APIKEY = $ENV{MYPEOPLE_APIKEY}; 
 my $datapath = 'data.yaml';
@@ -68,7 +68,7 @@ if( -e $datapath ){
 
 
 sub gethelptext{
-	return "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장\nbot : 전체 중계봇 사용자목록\nirc : irc사용자목록";
+	return "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장\nbot : 전체 중계봇 사용자목록\nirc : irc사용자목록\nnick 닉네임 : 중계용 닉네임설정\ngroupname 그룹이름 : 중계용 그룹이름 설정";
 }
 sub broadcast{
 	my $content = shift;
@@ -95,18 +95,25 @@ sub broadmembers{
 	foreach my $k (keys %mp_users){
 		my $user = $mp_users{$k};
 		if( $user->{on} ){
-			push(@{$mem{personal}},$user->{name});
+			push(@{$mem{'1:1'}},$user->{name});
 		}
 	}
 	my $num = 1;
 	foreach my $k (keys %mp_groups){
 		my $group = $mp_groups{$k};
+		my $group_name = $group->{name};
 		if( $group->{on} ){
+			$group_name = 'GROUP#'.$num++ unless $group_name ;
 			my @members = @{$bot->groupMembers($k)->{buddys}};
-			$mem{"group_$num"} = [map{$_->{name};}@members];
+			my @names;
+			foreach my $m (@members){
+				my $name = $m->{name};
+				my $mapped_nick = $mp_group_users{$m->{buddyId}}->{name};
+				push(@names, $mapped_nick?$mapped_nick:$name);
+			}
+			$mem{$group_name} = \@names;
 		}		
 	}
-	p %mem;
 	return %mem;
 }
 
@@ -189,6 +196,24 @@ sub process_command{
 		return 1;
 	}
 
+	if( $content =~ /^groupname/ ){
+
+		if( $groupId && $content =~ /^groupname (.+)/ ){
+			$mp_groups{$groupId}->{name} = $1;
+		}
+		return 1;
+	}
+
+	if( $content =~ /^nick/ ){
+
+		if( $buddyId && $content =~ /^nick (.+)/ ){
+			$mp_users{$buddyId}->{name} = $1;
+			$mp_group_users{$buddyId}->{name} = $1;
+		}
+		return 1;
+	}
+
+
 	if( $groupId && $content eq 'exit' ){
 		$bot->groupExit($groupId);
 		return 1;
@@ -260,7 +285,14 @@ sub callback{
 
 		if( !$was_cmd && $group->{on} ){
 			my $username = $user->{name};
-			my $msg = "[$username] $content";
+			my $msg;
+			my $groupname = $group->{name};
+			#if( $groupname ){
+			#	$msg = "[$username\@$groupname] $content";
+			#}
+			#else{
+				$msg = "[$username] $content";
+			#}
 			$irc->send_srv('PRIVMSG', $ch, $msg);
 			broadcast($msg, $buddyId, $groupId);
 		}
