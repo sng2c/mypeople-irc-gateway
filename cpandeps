@@ -1,0 +1,8 @@
+AnyEvent
+AnyEvent::IRC::Client
+AnyEvent::HTTPD
+Net::MyPeople::Bot
+Data::Printer
+JSON
+YAML
+Log::Log4perl

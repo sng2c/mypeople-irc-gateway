@@ -2,26 +2,32 @@
 
 use strict;
 use warnings;
-use 5.010;
 use AnyEvent;
 use AnyEvent::IRC::Client;
 use AnyEvent::HTTPD;
 use Net::MyPeople::Bot;
 use Data::Printer;
-
 use JSON;
 use YAML;
 use Log::Log4perl qw(:easy);
-Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
+Log::Log4perl->easy_init($INFO); # you can see requests in Net::MyPeople::Bot.
 
+### CONFIGURATIONS FOR YOU ###
+my $IRC_HOST = 'irc.freenode.net';
+my $IRC_PORT = 8000;
+my $IRC_NICK = 'MYPEOPLE_BOT';
+my $IRC_CHANNEL = '#perl-kr';
 
-my $host = 'irc.freenode.net';
-my $port = 8000;
-my $nick = 'MYPEOPLE_BOT';
-my $ch = '#perl-kr';
-my $APIKEY = $ENV{MYPEOPLE_APIKEY}; 
+my $MYPEOPLE_APIKEY = '';
+my $HTTP_PORT = 8080; # for MyPeople-Bot
+### CONFIGURATIONS ENDS ###
+
+$MYPEOPLE_APIKEY = $ENV{MYPEOPLE_APIKEY} unless $MYPEOPLE_APIKEY; # by env
+unless($MYPEOPLE_APIKEY){
+	ERROR "\$MYPEOPLE_APIKEY is not set.";
+	exit;
+}
 my $datapath = 'data.yaml';
-
 my $cv = AE::cv;
 my $sig = AE::signal INT => sub{$cv->send(1);};
 
@@ -36,9 +42,9 @@ sub parse_msg {
 
 my @names_queue;
 
-my $bot = Net::MyPeople::Bot->new({apikey=>$APIKEY});
+my $bot = Net::MyPeople::Bot->new({apikey=>$MYPEOPLE_APIKEY});
 my $irc = AnyEvent::IRC::Client->new;
-my $httpd = AnyEvent::HTTPD->new (port => 8080);
+my $httpd = AnyEvent::HTTPD->new (port => $HTTP_PORT );
 $httpd->reg_cb (
 	'/'=> sub{
 		my ($httpd, $req) = @_;
@@ -190,8 +196,7 @@ sub process_command{
 	}
 
 	if( $content eq 'irc' ){
-		DEBUG 'irc command';
-		$irc->send_srv('NAMES'=>$ch);
+		$irc->send_srv('NAMES'=>$IRC_CHANNEL);
 		push(@names_queue,[$buddyId,$groupId]);
 		return 1;
 	}
@@ -243,7 +248,7 @@ sub callback{
 		if( !$was_cmd && $user->{on} ){
 			my $username = $user->{name};
 			my $msg = "[$username] $content";
-			$irc->send_srv('PRIVMSG', $ch, $msg);
+			$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
 			broadcast($msg, $buddyId);
 		}
 	}
@@ -296,7 +301,7 @@ sub callback{
 			#else{
 				$msg = "[$username] $content";
 			#}
-			$irc->send_srv('PRIVMSG', $ch, $msg);
+			$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
 			broadcast($msg, $buddyId, $groupId);
 		}
 	}
@@ -305,19 +310,18 @@ sub callback{
 $irc->reg_cb (connect => sub {
 	my ($con, $err) = @_;
 	if (defined $err) {
-		DEBUG "connect error: $err";
+		ERROR "connect error: $err";
 		$cv->send;
 		return;
 	}
-	#$irc->send_srv( JOIN => '#perl-kr' );
-	$irc->send_srv( JOIN => $ch );
+	$irc->send_srv( JOIN => $IRC_CHANNEL );
 });
-$irc->reg_cb (registered => sub { DEBUG "I'm in!"; });
-$irc->reg_cb (disconnect => sub { DEBUG "I'm out!"; $cv->send });
+$irc->reg_cb (registered => sub { INFO "Connected!"; });
+$irc->reg_cb (disconnect => sub { INFO "Disconnected!"; $cv->send });
 $irc->reg_cb (join => sub { 
 		my ($cl, $nick, $channel, $is_myself) = @_;
 		if($is_myself){
-			DEBUG "started";
+			INFO "started!";
 			return;
 		}
 		else{
@@ -325,22 +329,17 @@ $irc->reg_cb (join => sub {
 		}
 		
 });
-$irc->reg_cb (privatemsg => sub { 
-	my ($self, $nick, $ircmsg) = @_;
-	DEBUG p $nick;
-	DEBUG p $ircmsg;
-});
 $irc->reg_cb (publicmsg => sub { 
 	my ($self, $ch, $ircmsg) = @_;
 	my ($msgnick, $msg) = parse_msg($ircmsg);
-	return if $msgnick eq $nick; # loop guard
+	return if $msgnick eq $IRC_NICK; # loop guard
 
-	if( $msg =~ /^$nick.+help$/ ){
-		$irc->send_srv('PRIVMSG', $ch, "$nick - A gateway between #perl-kr and mypeople-bot.");
-		$irc->send_srv('PRIVMSG', $ch, "$nick bot : prints member list in $nick bot.");
+	if( $msg =~ /^$IRC_NICK.+help$/ ){
+		$irc->send_srv('PRIVMSG', $ch, "$IRC_NICK - A gateway between #perl-kr and mypeople-bot.");
+		$irc->send_srv('PRIVMSG', $ch, "    $IRC_NICK bot : prints member list in $IRC_NICK bot.");
 		return;
 	}
-	if( $msg =~ /^$nick.+bot$/ ){
+	if( $msg =~ /^$IRC_NICK.+bot$/ ){
 		my %members = broadmembers();
 		my $printed = 0;
 		foreach my $k (keys %members){
@@ -349,7 +348,7 @@ $irc->reg_cb (publicmsg => sub {
 			$printed = 1;
 		}
 		unless($printed){
-			$irc->send_srv('PRIVMSG', $ch, "Nobody is listening by $nick bot");
+			$irc->send_srv('PRIVMSG', $ch, "Nobody is listening by $IRC_NICK bot");
 		}
 		return;
 	}
@@ -374,7 +373,7 @@ $irc->reg_cb(
 	irc_353	=> sub {
 		my ($cl, $ircmsg) = @_;
 		my ($_nick,$sep,$_ch,$names) = @{$ircmsg->{params}};
-		my $msg = "IRC $ch : $names";
+		my $msg = "IRC $IRC_CHANNEL : $names";
 		while( my $from = shift(@names_queue) )
 		{
 			if( $from->[1] ){
@@ -389,16 +388,16 @@ $irc->reg_cb(
 
 start:
 
-$irc->connect( $host, $port, {nick=>$nick});
+$irc->connect( $IRC_HOST, $IRC_PORT, {nick=>$IRC_NICK});
 
 my $res = $cv->recv; # EVENT LOOP
 $irc->disconnect;
 YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_group_users);
 
 unless ($res){ # restart
-	say "restart";
+	INFO "restart";
 	goto start;
 }
 
-say "stopped";
+INFO "stopped";
 

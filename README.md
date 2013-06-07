@@ -3,8 +3,24 @@ mypeople-irc-gateway
 
 mypeople-irc-gateway
 
-    edit $host,$port,$nick,$ch.
+1. Install Dependencies.
 
-and execute below.
+    cat cpandeps | cpanm
 
-    $ MYPEOPLE_APIKEY=XXXXXXXXXXX perl mypeople-irc-gateway.pl
+2. Edit the source.
+
+* $IRC_HOST
+* $IRC_PORT
+* $IRC_NICK
+* $IRC_CHANNEL
+
+* $MYPEOPLE_APIKEY : If you not set, the script fill it from system environment values.
+* $HTTP_PORT
+
+3. And execute below in shell.
+
+    perl mypeople-irc-gateway.pl
+
+	or
+
+    MYPEOPLE_APIKEY=XXXXXXXXXXX perl mypeople-irc-gateway.pl
