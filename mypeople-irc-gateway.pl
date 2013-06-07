@@ -227,7 +227,7 @@ sub process_command{
 
 sub callback{
 	my ($action, $buddyId, $groupId, $content ) = @_;
-	p @_;
+	DEBUG p @_;
 
 	if   ( $action eq 'addBuddy' ){ # when someone add this bot as a buddy.
 		# $buddyId : buddyId who adds this bot to buddys.
