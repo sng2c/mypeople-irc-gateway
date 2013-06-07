@@ -210,17 +210,17 @@ sub gethelptext{
 		return 1;
 	}
 
-	if( $content_lc =~ /^groupname/ ){
+	if( $content =~ /^groupname/i ){
 
-		if( $groupId && $content =~ /^groupname (.+)/ ){
+		if( $groupId && $content =~ /^groupname (.+)/i ){
 			$mp_groups{$groupId}->{name} = $1;
 		}
 		return 1;
 	}
 
-	if( $content_lc =~ /^nick/ ){
+	if( $content =~ /^nick/i ){
 
-		if( $buddyId && $content =~ /^nick (.+)/ ){
+		if( $buddyId && $content =~ /^nick (.+)/i ){
 			$mp_nickmap{$buddyId} = $1;
 		}
 		return 1;
