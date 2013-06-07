@@ -10,7 +10,7 @@ use Data::Printer;
 use JSON;
 use YAML;
 use Log::Log4perl qw(:easy);
-Log::Log4perl->easy_init($INFO); # you can see requests in Net::MyPeople::Bot.
+Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
 
 ### CONFIGURATIONS FOR YOU ###
 my $IRC_HOST = 'irc.freenode.net';
@@ -34,7 +34,6 @@ my $sig = AE::signal INT => sub{$cv->send(1);};
 
 sub parse_msg {
     my ($irc_msg) = @_;
-
     my ($nickname) = $irc_msg->{prefix} =~ m/^([^!]+)/;
     my $message = $irc_msg->{params}[1];
     return ($nickname, $message);
@@ -61,12 +60,13 @@ $httpd->reg_cb (
 
 my %mp_users;
 my %mp_groups;
-my %mp_group_users;
+my %mp_nickmap;
+
 if( -e $datapath ){
-	my ($mpu, $mpg, $mpgu) = YAML::LoadFile($datapath);
-	%mp_users = %{$mpu};
-	%mp_groups= %{$mpg};
-	%mp_group_users = %{$mpgu};
+	my ($mpu, $mpg, $nickmap) = YAML::LoadFile($datapath);
+	%mp_users = %{$mpu} if( $mpu );
+	%mp_groups= %{$mpg} if( $mpg );
+	%mp_nickmap = %{$nickmap} if($nickmap);
 }
 
 
@@ -80,14 +80,20 @@ sub broadcast{
 		next if $except_buddyId && $except_buddyId eq $buddyId;
 		my $user = $mp_users{$buddyId};
 		if( $user->{on} ){
-			$bot->send($buddyId,$content);
+			my $res = $bot->send($buddyId,$content);
+			if( $res->{code} eq '404' ){
+				delete $mp_users{$buddyId};
+			}
 		}
 	}
 	foreach my $groupId (keys %mp_groups){
 		next if $except_groupId && $except_groupId eq $groupId;
 		my $group = $mp_groups{$groupId};
 		if( $group->{on} ){
-			$bot->groupSend($groupId, $content);
+			my $res = $bot->groupSend($groupId, $content);
+			if( $res->{code} eq '901' ){
+				delete $mp_groups{$groupId};
+			}
 		}
 	}
 }
@@ -96,9 +102,11 @@ sub broadmembers{
 	my %mem;
 
 	foreach my $k (keys %mp_users){
-		my $user = $mp_users{$k};
-		if( $user->{on} ){
-			push(@{$mem{'1:1'}},$user->{name});
+		my $m = $mp_users{$k};
+		if( $m->{on} ){
+			my $name = $m->{name};
+			my $mapped_nick = $mp_nickmap{$m->{buddyId}};
+			push(@{$mem{'Personal'}}, $mapped_nick?$mapped_nick:$name);
 		}
 	}
 	my $num = 1;
@@ -111,11 +119,13 @@ sub broadmembers{
 			my @names;
 			foreach my $m (@members){
 				my $name = $m->{name};
-				my $mapped_nick = $mp_group_users{$m->{buddyId}}->{name};
+				my $mapped_nick = $mp_nickmap{$m->{buddyId}};
+				$mp_nickmap{$m->{buddyId}} = $m->{name} unless $mapped_nick; # update nick
+
 				push(@names, $mapped_nick?$mapped_nick:$name);
 			}
 			$mem{$group_name} = \@names;
-		}		
+		}
 	}
 	return %mem;
 }
@@ -123,7 +133,7 @@ sub broadmembers{
 sub get_user{
 	my $buddyId = shift;
 	my $user = $mp_users{$buddyId};
-	unless($user){
+	if(!$user || $user->{buddyId}){
 		my $res = $bot->buddy($buddyId);
 		$user = $res->{buddys}->[0];
 		$user->{on} = 1;
@@ -131,26 +141,28 @@ sub get_user{
 	}
 	return $user;
 }
-sub get_group_user{
+
+sub get_group_usernick{
 	my $buddyId = shift;
-	my $user = $mp_group_users{$buddyId};
-	unless($user){
+	my $nick = $mp_nickmap{$buddyId};
+	if(!$nick){
 		my $res = $bot->buddy($buddyId);
-		$user = $res->{buddys}->[0];
-		$mp_group_users{$buddyId} = $user;
+		my $user = $res->{buddys}->[0];
+		$nick = $mp_nickmap{$buddyId} = $user->{name};
 	}
-	return $user;
+	return $nick;
 }
+
 sub get_group{
 	my $groupId = shift;
 	my $buddyId = shift;
-	my $user = get_group_user($buddyId);
+	my $usernick = get_group_usernick($buddyId);
 	my $group = $mp_groups{$groupId};
 	unless($group){
 		$group = {on=>1,groupId=>$groupId};
 		$mp_groups{$groupId} = $group;
 	}
-	return $group,$user;
+	return $group,$usernick;
 }
 
 sub process_command{
@@ -177,7 +189,7 @@ sub process_command{
 		my @msg;
 		foreach my $k (keys %members){
 			my @mem = @{$members{$k}};
-			push( @msg, "$k member : ".join(',',@mem) );
+			push( @msg, "MyPeople $k : ".join(',',@mem) );
 		}
 
 		foreach my $msg (@msg){
@@ -209,8 +221,7 @@ sub process_command{
 	if( $content =~ /^nick/ ){
 
 		if( $buddyId && $content =~ /^nick (.+)/ ){
-			$mp_users{$buddyId}->{name} = $1;
-			$mp_group_users{$buddyId}->{name} = $1;
+			$mp_nickmap{$buddyId} = $1;
 		}
 		return 1;
 	}
@@ -218,13 +229,14 @@ sub process_command{
 
 	if( $groupId && $content eq 'exit' ){
 		$bot->groupExit($groupId);
+		delete $mp_groups{$groupId};
 		return 1;
 	}
 }
 
 sub callback{
 	my ($action, $buddyId, $groupId, $content ) = @_;
-	DEBUG p @_;
+	DEBUG 'callback dump:'. p @_;
 
 	if   ( $action eq 'addBuddy' ){ # when someone add this bot as a buddy.
 		# $buddyId : buddyId who adds this bot to buddys.
@@ -244,7 +256,9 @@ sub callback{
 
 		if( !$was_cmd && $user->{on} ){
 			my $username = $user->{name};
-			my $msg = "[$username] $content";
+			my $mapped_nick = $mp_nickmap{$buddyId};
+			my $nick = $mapped_nick?$mapped_nick:$username;
+			my $msg = "[$nick] $content";
 			$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
 			broadcast($msg, $buddyId);
 		}
@@ -258,7 +272,7 @@ sub callback{
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"N","name":"XXXX","photoId":"myp_pub:XXXXXX"},
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"Y","name":"XXXX","photoId":"myp_pub:XXXXXX"}
 		# ]
-		my ($group,$user) = get_group($groupId, $buddyId);
+		my ($group,$usernick) = get_group($groupId, $buddyId);
 	}
 	elsif( $action eq 'inviteToGroup' ){ # when someone in a group chat channel invites user to the channel.
 		# $buddyId : buddyId who invites member
@@ -268,7 +282,7 @@ sub callback{
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"N","name":"XXXX","photoId":"myp_pub:XXXXXX"},
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"Y","name":"XXXX","photoId":"myp_pub:XXXXXX"}
 		# ]
-		my ($group,$user) = get_group($groupId, $buddyId);
+		my ($group,$usernick) = get_group($groupId, $buddyId);
 	}
 	elsif( $action eq 'exitFromGroup' ){ # when someone in a group chat channel leaves.
 		# $buddyId : buddyId who exits
@@ -285,19 +299,12 @@ sub callback{
 		# $groupId : group id where message is sent
 		# $content : text
 
-		my ($group,$user) = get_group($groupId, $buddyId);
+		my ($group,$usernick) = get_group($groupId, $buddyId);
 		my $was_cmd = process_command($buddyId, $groupId, $group, $content);
 
 		if( !$was_cmd && $group->{on} ){
-			my $username = $user->{name};
-			my $msg;
 			my $groupname = $group->{name};
-			#if( $groupname ){
-			#	$msg = "[$username\@$groupname] $content";
-			#}
-			#else{
-				$msg = "[$username] $content";
-			#}
+			my $msg = "[$usernick] $content";
 			$irc->send_srv('PRIVMSG', $IRC_CHANNEL, $msg);
 			broadcast($msg, $buddyId, $groupId);
 		}
@@ -389,7 +396,7 @@ $irc->connect( $IRC_HOST, $IRC_PORT, {nick=>$IRC_NICK});
 
 my $res = $cv->recv; # EVENT LOOP
 $irc->disconnect;
-YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_group_users);
+YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_nickmap);
 
 unless ($res){ # restart
 	INFO "restart";
