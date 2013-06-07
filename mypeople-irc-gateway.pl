@@ -352,10 +352,13 @@ start:
 $irc->connect( $host, $port, {nick=>$nick});
 
 my $res = $cv->recv; # EVENT LOOP
-
-goto start unless $res; # restart
-
 $irc->disconnect;
 YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_group_users);
+
+unless ($res){ # restart
+	say "restart";
+	goto start;
+}
+
 say "stopped";
 
