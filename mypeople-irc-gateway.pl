@@ -217,7 +217,7 @@ sub callback{
 
 		if( !$was_cmd && $user->{on} ){
 			my $username = $user->{name};
-			my $msg = "$username : $content";
+			my $msg = "[$username] $content";
 			$irc->send_srv('PRIVMSG', $ch, $msg);
 			broadcast($msg, $buddyId);
 		}
@@ -261,7 +261,7 @@ sub callback{
 
 		if( !$was_cmd && $group->{on} ){
 			my $username = $user->{name};
-			my $msg = "$username : $content";
+			my $msg = "[$username] $content";
 			$irc->send_srv('PRIVMSG', $ch, $msg);
 			broadcast($msg, $buddyId, $groupId);
 		}
@@ -314,7 +314,7 @@ $irc->reg_cb (publicmsg => sub {
 		}
 		return;
 	}
-	broadcast("$msgnick : $msg");
+	broadcast("{$msgnick} $msg");
 } 
 );
 $irc->reg_cb(
