@@ -71,9 +71,6 @@ if( -e $datapath ){
 }
 
 
-sub gethelptext{
-	return "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장\nbot : 전체 중계봇 사용자목록\nirc : irc사용자목록\nnick 닉네임 : 중계용 닉네임설정\ngroupname 그룹이름 : 중계용 그룹이름 설정";
-}
 sub broadcast{
 	my $content = shift;
 	my ($except_buddyId,$except_groupId) = @_;
@@ -166,52 +163,54 @@ sub get_group{
 	return $group,$usernick;
 }
 
-sub process_command{
+sub gethelptext{
 	my ($buddyId,$groupId,$user_group,$content) = @_;
-	if( $content eq 'start' ){
+
+    my $content_lc = lc($content);
+
+	if( $content_lc eq 'start' ){
 		$user_group->{on} = 1;
 		return 1;
 	}
-	if( $content eq 'stop' ){
+	if( $content_lc eq 'stop' ){
 		$user_group->{on} = 0;
 		return 1;
 	}
-	if( $content eq 'help' ){
+	if( $content_lc eq 'help' ){
+
+	    my $help = "[freenode irc #perl-kr 중계봇]\nstart : 시작\nstop : 중지\nhelp : 도움말\nexit : 그룹대화 퇴장\nwho : irc/마이피플 사용자목록\nnick 닉네임 : 중계용 닉네임설정\ngroupname 그룹이름 : 중계용 그룹이름 설정";
 		if( $groupId ){
-			$bot->groupSend($groupId,gethelptext());
+			$bot->groupSend($groupId,$help);
 		}
 		else{
-			$bot->send($buddyId,gethelptext());
+			$bot->send($buddyId,$help);
 		}
 		return 1;
 	}
-	if( $content eq 'bot' ){
+	if( $content_lc eq 'who' ){
 		my %members = broadmembers();
 		my @msg;
+        my $out = "[Mypeople]";
 		foreach my $k (keys %members){
 			my @mem = @{$members{$k}};
-			push( @msg, "MyPeople $k : ".join(',',@mem) );
+			$out .= "$k : ".join(',',@mem)."\n" ;
 		}
 
-		foreach my $msg (@msg){
-			if( $groupId ){
-				$bot->groupSend($groupId,$msg);
-			}
-			else{
-				$bot->send($buddyId,$msg);
-			}
-		}
+        if( $groupId ){
+            $bot->groupSend($groupId,$out);
+        }
+        else{
+            $bot->send($buddyId,$out);
+        }
 
-		return 1;
-	}
-
-	if( $content eq 'irc' ){
+        # query IRC names
 		$irc->send_srv('NAMES'=>$IRC_CHANNEL);
 		push(@names_queue,[$buddyId,$groupId]);
+
 		return 1;
 	}
 
-	if( $content =~ /^groupname/ ){
+	if( $content_lc =~ /^groupname/ ){
 
 		if( $groupId && $content =~ /^groupname (.+)/ ){
 			$mp_groups{$groupId}->{name} = $1;
@@ -219,7 +218,7 @@ sub process_command{
 		return 1;
 	}
 
-	if( $content =~ /^nick/ ){
+	if( $content_lc =~ /^nick/ ){
 
 		if( $buddyId && $content =~ /^nick (.+)/ ){
 			$mp_nickmap{$buddyId} = $1;
@@ -228,7 +227,7 @@ sub process_command{
 	}
 
 
-	if( $groupId && $content eq 'exit' ){
+	if( $groupId && $content_lc eq 'exit' ){
 		$bot->groupExit($groupId);
 		delete $mp_groups{$groupId};
 		return 1;
@@ -346,24 +345,27 @@ $irc->reg_cb (publicmsg => sub {
 	my ($msgnick, $msg) = parse_msg($ircmsg);
 	return if $msgnick eq $IRC_NICK; # loop guard
 
-	if( $msg =~ /^$IRC_NICK.+help$/ ){
+	if( $msg =~ /^$IRC_NICK.+help$/i ){
 		irc_send("$IRC_NICK - A gateway between #perl-kr and mypeople-bot.");
-		irc_send("    $IRC_NICK bot : prints member list in $IRC_NICK bot.");
+		irc_send("    $IRC_NICK who - prints member list in $IRC_NICK bot.");
 		return;
 	}
-	if( $msg =~ /^$IRC_NICK.+bot$/ ){
+
+	if( $msg =~ /^$IRC_NICK.+who$/i ){
 		my %members = broadmembers();
 		my $printed = 0;
 		foreach my $k (keys %members){
+            irc_send("[MyPeople]") unless $printed;
 			my @mem = @{$members{$k}};
-			irc_send("MyPeople $k : ".join(',',@mem));
+			irc_send("$k : ".join(',',@mem));
 			$printed = 1;
 		}
 		unless($printed){
-			irc_send("Nobody is listening by $IRC_NICK bot");
+			irc_send("Nobody is on MyPeople.");
 		}
 		return;
 	}
+
 	broadcast("{$msgnick} $msg");
 } 
 );
@@ -385,7 +387,7 @@ $irc->reg_cb(
 	irc_353	=> sub {
 		my ($cl, $ircmsg) = @_;
 		my ($_nick,$sep,$_ch,$names) = @{$ircmsg->{params}};
-		my $msg = "IRC $IRC_CHANNEL : $names";
+		my $msg = "[IRC $IRC_CHANNEL]\n$names";
 		while( my $from = shift(@names_queue) )
 		{
 			if( $from->[1] ){
