@@ -231,6 +231,7 @@ sub callback{
 		# [
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"N","name":"XXXX","photoId":"myp_pub:XXXXXX"},
 		# ]
+		my $user = get_user($buddyId);
 	}
 	elsif( $action eq 'sendFromMessage' ){ # when someone send a message to this bot.
 		# $buddyId : buddyId who sends message
@@ -255,6 +256,7 @@ sub callback{
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"N","name":"XXXX","photoId":"myp_pub:XXXXXX"},
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"Y","name":"XXXX","photoId":"myp_pub:XXXXXX"}
 		# ]
+		my ($group,$user) = get_group($groupId, $buddyId);
 	}
 	elsif( $action eq 'inviteToGroup' ){ # when someone in a group chat channel invites user to the channel.
 		# $buddyId : buddyId who invites member
@@ -264,6 +266,7 @@ sub callback{
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"N","name":"XXXX","photoId":"myp_pub:XXXXXX"},
 		#    {"buddyId":"XXXXXXXXXXXXXXXXXXXX","isBot":"Y","name":"XXXX","photoId":"myp_pub:XXXXXX"}
 		# ]
+		my ($group,$user) = get_group($groupId, $buddyId);
 	}
 	elsif( $action eq 'exitFromGroup' ){ # when someone in a group chat channel leaves.
 		# $buddyId : buddyId who exits
