@@ -7,16 +7,13 @@ mypeople-irc-gateway
 
     cat cpandeps | cpanm
 
-2. Edit the source.
-
-* $IRC_HOST
-* $IRC_PORT
-* $IRC_NICK
-* $IRC_CHANNEL
-
-* $MYPEOPLE_APIKEY : If you not set, the script fill it from system environment values.
-* $HTTP_PORT
-
+2. Edit the configuration in the source file.
+    * $IRC_HOST
+    * $IRC_PORT
+    * $IRC_NICK
+    * $IRC_CHANNEL
+    * $MYPEOPLE_APIKEY : If you not set, the script fill it from system environment values.
+    * $HTTP_PORT
 3. And execute below in shell.
 
     perl mypeople-irc-gateway.pl
