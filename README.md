@@ -21,3 +21,6 @@ mypeople-irc-gateway
 	or
 
     MYPEOPLE_APIKEY=XXXXXXXXXXX perl mypeople-irc-gateway.pl
+
+4. Set MyPeopleBot Callback URL to http://YOUR_HOST:$HTTP_PORT/callback and API Request IP to YOUR_IP in Daum MyPeople-Bot page.
+

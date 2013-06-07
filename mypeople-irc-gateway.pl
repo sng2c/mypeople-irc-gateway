@@ -20,7 +20,7 @@ my $IRC_CHANNEL = '#perl-kr';
 
 my $MYPEOPLE_APIKEY = '';
 my $HTTP_PORT = 8080; # for MyPeople-Bot
-### CONFIGURATIONS ENDS ###
+### CONFIGURATIONS END ###
 
 $MYPEOPLE_APIKEY = $ENV{MYPEOPLE_APIKEY} unless $MYPEOPLE_APIKEY; # by env
 unless($MYPEOPLE_APIKEY){
@@ -46,10 +46,6 @@ my $bot = Net::MyPeople::Bot->new({apikey=>$MYPEOPLE_APIKEY});
 my $irc = AnyEvent::IRC::Client->new;
 my $httpd = AnyEvent::HTTPD->new (port => $HTTP_PORT );
 $httpd->reg_cb (
-	'/'=> sub{
-		my ($httpd, $req) = @_;
-		$req->respond( { content => ['text/html','hello'] });
-	},
 	'/callback' => sub {
 		my ($httpd, $req) = @_;
 
@@ -58,6 +54,7 @@ $httpd->reg_cb (
 		my $groupId = $req->parm('groupId');
 		my $content = $req->parm('content');
 
+		$req->respond( { content => ['text/html','ok'] });
 		callback( $action, $buddyId, $groupId, $content );
 	}
 );
