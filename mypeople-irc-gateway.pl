@@ -342,9 +342,14 @@ $irc->reg_cb (publicmsg => sub {
 	}
 	if( $msg =~ /^$nick.+bot$/ ){
 		my %members = broadmembers();
+		my $printed = 0;
 		foreach my $k (keys %members){
 			my @mem = @{$members{$k}};
 			$irc->send_srv('PRIVMSG', $ch, "MyPeople $k : ".join(',',@mem));
+			$printed = 1;
+		}
+		unless($printed){
+			$irc->send_srv('PRIVMSG', $ch, "Nobody is listening by $nick bot");
 		}
 		return;
 	}
