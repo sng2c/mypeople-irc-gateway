@@ -14,7 +14,6 @@ use YAML;
 use Log::Log4perl qw(:easy);
 Log::Log4perl->easy_init($DEBUG); # you can see requests in Net::MyPeople::Bot.
 
-start:
 
 my $host = 'irc.freenode.net';
 my $port = 8000;
@@ -348,11 +347,13 @@ $irc->reg_cb(
 	}
 );
 
+start:
+
 $irc->connect( $host, $port, {nick=>$nick});
 
 my $res = $cv->recv; # EVENT LOOP
 
-goto start unless $res;
+goto start unless $res; # restart
 
 $irc->disconnect;
 YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_group_users);
