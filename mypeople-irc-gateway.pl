@@ -400,8 +400,9 @@ $irc->reg_cb(
 		}
 	}
 );
-
+my $retry = 0;
 start:
+$retry++;
 
 $irc->connect( $IRC_HOST, $IRC_PORT, {nick=>$IRC_NICK});
 
@@ -409,7 +410,7 @@ my $res = $cv->recv; # EVENT LOOP
 $irc->disconnect;
 YAML::DumpFile($datapath,\%mp_users,\%mp_groups,\%mp_nickmap);
 
-unless ($res){ # restart
+if (!$res && $retry < 5){ # restart
 	INFO "restart";
 	goto start;
 }
